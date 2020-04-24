@@ -15,15 +15,28 @@ rubric:
 initializer list
 public, private
 reading from file
+
 */
 
 void classification::load_image(){
 
-    _img = cv::imread("../images/hotdog.png");
+    if(true){
+
+        _img = cv::imread("../images/hotdog.png");
+
+    }
+    else if(5){
+
+        _img = cv::imread("../images/imresizer_com.jpg");
+
+    }
+    else{
+
+        std::cout<<"incorrect image"<<std::endl;
+    }
 
 
 }
-
 
 classification::classification():_yoloBasePath("../dat/yolo/"),confThreshold(0.21){
 
@@ -75,16 +88,29 @@ void classification::scanBoundingBoxes(vector<cv::Mat> netOutput){
 }
 
 
-void classification::nonMaximaSuppression(){
+void classification::nonMaximaSuppression(std::vector<BoundingBox> &Boxes){
 
+    float nmsThreshold = 0.5;  // Non-maximum suppression threshold
+    vector<int> indices;
+    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
     
+    for (auto it = indices.begin(); it != indices.end(); ++it)
+    {
+        BoundingBox bBox;
+        bBox.roi = boxes[*it];
+        bBox.classID = classIds[*it];
+        bBox.confidence = confidences[*it];
+        bBox.boxID = (int)Boxes.size(); // zero-based unique identifier for this bounding box
+        
+        Boxes.push_back(bBox);
+    }
 }
 
 void classification::detectObjects2()
 {
     // load image from file
     load_image(); 
-    vector<string> classes;
+    
 
     ifstream ifs(_yoloClassesFile.c_str());
     string line;
@@ -125,30 +151,33 @@ void classification::detectObjects2()
     net.forward(netOutput, names);
 
     // Scan through all bounding boxes and keep only the ones with high confidence
-            scanBoundingBoxes(netOutput);
-            std::cout<<"Number of Boxes :"<< boxes.size()<<std::endl;
+    scanBoundingBoxes(netOutput);
+    std::cout<<"Number of Boxes :"<< boxes.size()<<std::endl;
 
 
     // perform non-maxima suppression
-    float nmsThreshold = 0.5;  // Non-maximum suppression threshold
-    vector<int> indices;
-    cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
     std::vector<BoundingBox> bBoxes;
-    for (auto it = indices.begin(); it != indices.end(); ++it)
-    {
-        BoundingBox bBox;
-        bBox.roi = boxes[*it];
-        bBox.classID = classIds[*it];
-        bBox.confidence = confidences[*it];
-        bBox.boxID = (int)bBoxes.size(); // zero-based unique identifier for this bounding box
-        
-        bBoxes.push_back(bBox);
-    }
+    nonMaximaSuppression(bBoxes);
     
     
     // show results
-    cv::Mat visImg = _img.clone();
-    for (auto it = bBoxes.begin(); it != bBoxes.end(); ++it)
+    show_result(bBoxes);
+
+    auto endTime = std::chrono::steady_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    std::cout<<"Elapsed time is "<< elapsedTime.count() <<std::endl;
+
+    string windowName = "Object classification";
+    cv::namedWindow( windowName, 1 );
+    cv::imshow( windowName, visImg );
+    cv::waitKey(0); // wait for key to be pressed
+}
+
+
+void classification::show_result(std::vector<BoundingBox> &Boxes){
+
+    visImg = _img.clone();
+    for (auto it = Boxes.begin(); it != Boxes.end(); ++it)
     {
         // Draw rectangle displaying the bounding box
         int top, left, width, height;
@@ -180,12 +209,12 @@ void classification::detectObjects2()
         cv::putText(visImg, label, cv::Point(left, top), cv::FONT_ITALIC, 0.75, cv::Scalar(0, 0, 0), 1);
     }
 
-    auto endTime = std::chrono::steady_clock::now();
-    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-    std::cout<<"Elapsed time is "<< elapsedTime.count() <<std::endl;
-
-    string windowName = "Object classification";
-    cv::namedWindow( windowName, 1 );
-    cv::imshow( windowName, visImg );
-    cv::waitKey(0); // wait for key to be pressed
+    std::cout<<"End of Code"<<std::endl;
 }
+/*
+
+classification::~classification(){
+
+    std::cout << "Object has been deleted" <<std::endl;
+}
+ */

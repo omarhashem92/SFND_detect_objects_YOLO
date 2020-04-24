@@ -15,14 +15,18 @@ class classification{
     public:
     void detectObjects2();
     classification();
-
+    //~classification();
+    //classification()
 
     private:
+    //class methods
     void load_image();
     bool is_hotdog(std::string class_name);
     void scanBoundingBoxes(vector<cv::Mat> netOutput);
-    void nonMaximaSuppression();
-
+    void nonMaximaSuppression(std::vector<BoundingBox> &Boxes);
+    void show_result(std::vector<BoundingBox> &Boxes);
+    
+    //class members
     string _yoloBasePath;
     string _yoloClassesFile;
     string _yoloModelConfiguration;
@@ -32,7 +36,9 @@ class classification{
     vector<int> classIds;
     vector<float> confidences;
     vector<cv::Rect> boxes;
-    std::vector<BoundingBox> bBoxes;
+    //std::vector<BoundingBox> bBoxes;
+    cv::Mat visImg;
+    vector<string> classes;
 };
 //void detectObjects2();
 
