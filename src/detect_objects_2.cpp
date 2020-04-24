@@ -5,41 +5,109 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include <opencv2/dnn.hpp>
-
+#include "detect_objects_2.h"
 #include "dataStructures.h"
 
 using namespace std;
+/*
+ 
+rubric:
+initializer list
+public, private
+reading from file
+*/
 
-void detectObjects2()
-{
-    // load image from file
-    cv::Mat img = cv::imread("../images/s_thrun.jpg");
+void classification::load_image(){
+
+    _img = cv::imread("../images/hotdog.png");
+
+
+}
+
+
+classification::classification():_yoloBasePath("../dat/yolo/"),confThreshold(0.21){
 
     // load class names from file
-    string yoloBasePath = "../dat/yolo/";
-    string yoloClassesFile = yoloBasePath + "coco.names";
-    string yoloModelConfiguration = yoloBasePath + "yolov3.cfg";
-    string yoloModelWeights = yoloBasePath + "yolov3.weights"; 
+    //_yoloBasePath = "../dat/yolo/";
+    _yoloClassesFile = _yoloBasePath + "coco.names";
+    _yoloModelConfiguration = _yoloBasePath + "yolov3.cfg";
+    _yoloModelWeights = _yoloBasePath + "yolov3.weights"; 
+}
 
+bool classification::is_hotdog(std::string class_name){
+    if(class_name == "hot dog"){
+        return true;
+    }
+    else{
+        return false;
+    }
+}
+
+void classification::scanBoundingBoxes(vector<cv::Mat> netOutput){
+    for (size_t i = 0; i < netOutput.size(); ++i)
+    {
+        float* data = (float*)netOutput[i].data;
+        for (int j = 0; j < netOutput[i].rows; ++j, data += netOutput[i].cols)
+        {
+            cv::Mat scores = netOutput[i].row(j).colRange(5, netOutput[i].cols);
+            cv::Point classId;
+            double confidence;
+            
+            // Get the value and location of the maximum score
+            cv::minMaxLoc(scores, 0, &confidence, 0, &classId);
+            if (confidence > confThreshold)
+            {
+                cv::Rect box; int cx, cy;
+                cx = (int)(data[0] * _img.cols);
+                cy = (int)(data[1] * _img.rows);
+                box.width = (int)(data[2] * _img.cols);
+                box.height = (int)(data[3] * _img.rows);
+                box.x = cx - box.width/2; // left
+                box.y = cy - box.height/2; // top
+                
+                boxes.push_back(box);
+                classIds.push_back(classId.x);
+                confidences.push_back((float)confidence);
+            }
+        }
+    }
+
+}
+
+
+void classification::nonMaximaSuppression(){
+
+    
+}
+
+void classification::detectObjects2()
+{
+    // load image from file
+    load_image(); 
     vector<string> classes;
-    ifstream ifs(yoloClassesFile.c_str());
+
+    ifstream ifs(_yoloClassesFile.c_str());
     string line;
     while (getline(ifs, line)) classes.push_back(line);
     
     // load neural network
-    cv::dnn::Net net = cv::dnn::readNetFromDarknet(yoloModelConfiguration, yoloModelWeights);
+    cv::dnn::Net net = cv::dnn::readNetFromDarknet(_yoloModelConfiguration, _yoloModelWeights);
     net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
     net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
 
     // generate 4D blob from input image
     cv::Mat blob;
     double scalefactor = 1/255.0;
+    auto startTime = std::chrono::steady_clock::now();
     cv::Size size = cv::Size(416, 416);
+    
+
     cv::Scalar mean = cv::Scalar(0,0,0);
     bool swapRB = false;
     bool crop = false;
-    cv::dnn::blobFromImage(img, blob, scalefactor, size, mean, swapRB, crop);
+    cv::dnn::blobFromImage(_img, blob, scalefactor, size, mean, swapRB, crop);
 
+    
     // Get names of output layers
     vector<cv::String> names;
     vector<int> outLayers = net.getUnconnectedOutLayers(); // get indices of output layers, i.e. layers with unconnected outputs
@@ -57,40 +125,12 @@ void detectObjects2()
     net.forward(netOutput, names);
 
     // Scan through all bounding boxes and keep only the ones with high confidence
-    float confThreshold = 0.20;
-    vector<int> classIds;
-    vector<float> confidences;
-    vector<cv::Rect> boxes;
-    for (size_t i = 0; i < netOutput.size(); ++i)
-    {
-        float* data = (float*)netOutput[i].data;
-        for (int j = 0; j < netOutput[i].rows; ++j, data += netOutput[i].cols)
-        {
-            cv::Mat scores = netOutput[i].row(j).colRange(5, netOutput[i].cols);
-            cv::Point classId;
-            double confidence;
-            
-            // Get the value and location of the maximum score
-            cv::minMaxLoc(scores, 0, &confidence, 0, &classId);
-            if (confidence > confThreshold)
-            {
-                cv::Rect box; int cx, cy;
-                cx = (int)(data[0] * img.cols);
-                cy = (int)(data[1] * img.rows);
-                box.width = (int)(data[2] * img.cols);
-                box.height = (int)(data[3] * img.rows);
-                box.x = cx - box.width/2; // left
-                box.y = cy - box.height/2; // top
-                
-                boxes.push_back(box);
-                classIds.push_back(classId.x);
-                confidences.push_back((float)confidence);
-            }
-        }
-    }
+            scanBoundingBoxes(netOutput);
+            std::cout<<"Number of Boxes :"<< boxes.size()<<std::endl;
+
 
     // perform non-maxima suppression
-    float nmsThreshold = 0.4;  // Non-maximum suppression threshold
+    float nmsThreshold = 0.5;  // Non-maximum suppression threshold
     vector<int> indices;
     cv::dnn::NMSBoxes(boxes, confidences, confThreshold, nmsThreshold, indices);
     std::vector<BoundingBox> bBoxes;
@@ -107,7 +147,7 @@ void detectObjects2()
     
     
     // show results
-    cv::Mat visImg = img.clone();
+    cv::Mat visImg = _img.clone();
     for (auto it = bBoxes.begin(); it != bBoxes.end(); ++it)
     {
         // Draw rectangle displaying the bounding box
@@ -119,7 +159,18 @@ void detectObjects2()
         cv::rectangle(visImg, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 255, 0), 2);
 
         string label = cv::format("%.2f", (*it).confidence);
-        label = classes[((*it).classID)] + ":" + label;
+
+
+        
+        if (is_hotdog(classes[((*it).classID)])){
+
+            label = classes[((*it).classID)] + "d:" + label;
+        }
+        else
+        {
+            label = "Not a hot dog";
+        }
+        
 
         // Display label at the top of the bounding box
         int baseLine;
@@ -129,13 +180,12 @@ void detectObjects2()
         cv::putText(visImg, label, cv::Point(left, top), cv::FONT_ITALIC, 0.75, cv::Scalar(0, 0, 0), 1);
     }
 
+    auto endTime = std::chrono::steady_clock::now();
+    auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    std::cout<<"Elapsed time is "<< elapsedTime.count() <<std::endl;
+
     string windowName = "Object classification";
     cv::namedWindow( windowName, 1 );
     cv::imshow( windowName, visImg );
     cv::waitKey(0); // wait for key to be pressed
-}
-
-int main()
-{
-    detectObjects2();
 }
